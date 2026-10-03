@@ -1,0 +1,30 @@
+{
+  "frame_path": "",
+  "photo_path": "",
+  "output_path": "",
+  "fit": "cover",
+  "quality": 93,
+  "dark_mode": true,
+  "posting_target": "facebook_page",
+  "output_dir": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs",
+  "output_format": "png",
+  "caption": "",
+  "facebook_page_id": "1386715137852281",
+  "caption_provider": "groq",
+  "caption_endpoint": "https://api.groq.com/openai/v1",
+  "caption_model": "openai/gpt-oss-120b",
+  "caption_keywords": "Cellphone Day!",
+  "caption_template": "{caption}\n\n{hashtags}",
+  "caption_models": {
+    "groq": "openai/gpt-oss-120b",
+    "openrouter": "openrouter/example-model",
+    "gemini": "gemini-2.5-flash-lite",
+    "ollama": "gemma3:1b"
+  },
+  "caption_endpoints": {
+    "groq": "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "gemini": "Google Gemini API (built in)",
+    "ollama": "http://localhost:11434"
+  }
+}

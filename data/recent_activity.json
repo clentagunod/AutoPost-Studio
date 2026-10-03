@@ -1,0 +1,72 @@
+[
+  {
+    "timestamp": "2026-10-03T17:54:07",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\front view.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\front view_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\down.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\down_001_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\front view.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\front view_002_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\ISOMETRIC.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\ISOMETRIC_003_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\left side.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\left side_004_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\rear view.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\rear view_005_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\TOP.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\TOP_006_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\transparent.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\transparent_007_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T18:02:32",
+    "photo": "C:\\Users\\Clent\\Pictures\\LEVI\\without cover.png",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\without cover_008_framed.png",
+    "status": "success"
+  },
+  {
+    "timestamp": "2026-10-03T19:08:17",
+    "photo": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\image.jpg",
+    "frame": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\frame_sample.png",
+    "output": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs\\image_framed.webp",
+    "status": "success"
+  }
+]

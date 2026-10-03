@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments and package/build output
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+
+# Editor and version-control metadata
+.vscode/
+.git/
+
+# Test, type-checker, and linter caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime output
+logs/
+outputs/
+*.log
+
+# Local test script
+test.py
