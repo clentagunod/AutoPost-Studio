@@ -7,13 +7,11 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from src.automation_cli import main
 from src.cli import main as image_cli_main
-from src.scheduler import load_posts
 
 
 class AutomationCliTests(unittest.TestCase):
@@ -79,38 +77,6 @@ class AutomationCliTests(unittest.TestCase):
                 output_dir / "portrait_framed.png",
             )
 
-    def test_queue_add_creates_local_post_record(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            image = folder / "image.png"
-            image.write_bytes(b"test image")
-            schedule = (datetime.now() + timedelta(days=1)).strftime(
-                "%Y-%m-%d %H:%M"
-            )
-            with patch(
-                "src.automation_cli.load_preferences",
-                return_value={"scheduler_dir": str(folder), "facebook_page_id": "page-1"},
-            ):
-                result = main(
-                    [
-                        "queue",
-                        "add",
-                        str(image),
-                        "--caption",
-                        "Test caption",
-                        "--schedule",
-                        schedule,
-                        "--json",
-                    ]
-                )
-
-            self.assertEqual(result, 0)
-            record = load_posts(folder)[0]
-            self.assertEqual(record.status, "queued")
-            self.assertEqual(record.caption, "Test caption")
-            self.assertEqual(record.page_id, "page-1")
-            self.assertEqual(record.scheduled_at, schedule)
-
     def test_queue_list_can_emit_json_for_scripts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
@@ -133,6 +99,28 @@ class AutomationCliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             output = json.loads(stdout.getvalue())
             self.assertEqual([item["id"] for item in output], [record.id])
+
+    def test_queue_list_can_filter_paused_posts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            image = folder / "paused.png"
+            image.write_bytes(b"test")
+            from src.scheduler import PostRecord, save_post
+
+            record = PostRecord(image=str(image), status="paused")
+            save_post(record, folder)
+            stdout = io.StringIO()
+            with (
+                patch(
+                    "src.automation_cli.load_preferences",
+                    return_value={"scheduler_dir": str(folder)},
+                ),
+                contextlib.redirect_stdout(stdout),
+            ):
+                result = main(["queue", "list", "--status", "paused"])
+
+            self.assertEqual(result, 0)
+            self.assertIn("paused.png", stdout.getvalue())
 
     def test_queue_delete_requires_explicit_confirmation_flag(self) -> None:
         stderr = io.StringIO()

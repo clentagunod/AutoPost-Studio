@@ -243,6 +243,6 @@ def _explain_deprecated_publish_permission(message: str) -> str:
         "Create a new System User token in Meta Business Settings, assign the System "
         "User both this app and the target Page with content-creation rights, and grant "
         "the current Pages API permissions such as `pages_manage_posts`. Do not request "
-        "`publish_actions`; replace the saved token under Options → APIs. "
+        "`publish_actions`; replace the saved token under Options → Facebook Pages. "
         f"Meta response: {message}"
     )

@@ -110,7 +110,7 @@ def delete_post_files(records: list[PostRecord], folder: Path) -> None:
 
     if in_progress:
         raise OSError(
-            "Cannot delete posts while the background worker is publishing them:\n"
+            "Cannot delete posts while publishing is in progress:\n"
             + "\n".join(in_progress)
         )
 

@@ -20,3 +20,12 @@ def set_secret(name: str, value: str) -> None:
         keyring.set_password(SERVICE, name, value)
     except keyring.errors.KeyringError as exc:
         raise RuntimeError(f"Credential vault is unavailable: {exc}") from exc
+
+
+def delete_secret(name: str) -> None:
+    try:
+        keyring.delete_password(SERVICE, name)
+    except keyring.errors.PasswordDeleteError:
+        return
+    except keyring.errors.KeyringError as exc:
+        raise RuntimeError(f"Credential vault is unavailable: {exc}") from exc

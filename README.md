@@ -19,22 +19,22 @@ In the app, select a transparent frame PNG, select a source image, write a capti
 
 - **File:** load a frame or photo, select multiple images or a folder of photos for batch processing, open the post scheduler, edit caption assistant settings, reset the preview. Google Drive is explicitly reserved for a future release.
 - **View:** light/dark appearance and a single-prompt terminal-style app console. It accepts the same application automation commands as the standalone CLI; it is not a general-purpose operating-system shell.
-- **Options:** Facebook Page credentials, AI caption provider settings, and the scheduler folder.
+- **Options:** multiple Facebook Page names, IDs, and access tokens; AI caption provider settings; and the scheduler folder. Choose the active Page from the current-Page selector above the workspace. Each Page token is saved in the operating system credential vault, and scheduler posts use the token saved for their Page ID.
 - **About:** application version and developer/about information.
 - **Post metadata:** each image exported by the desktop app receives a `.autopost` JSON sidecar containing its image path, caption, schedule, destination, Page ID, status, and remote post ID. By default the sidecar is in the output folder beside its image; if a separate scheduler folder is configured, new sidecars are saved there and refer to the image by absolute path. The scheduler also lists supported image files without a sidecar as editable draft posts. Sidecars are ordinary JSON and can be backed up or inspected with a text editor.
-- **Local scheduler:** select a row's date/time using the calendar popup and queue posts for local publishing. The separate background worker starts when AutoPost Studio opens and keeps running after the main window closes. On Windows it can be stopped from Task Manager; it is not automatically started after a Windows restart.
+- **Meta scheduling:** **Schedule with Facebook** submits a scheduled-publishing request to Meta immediately. After Meta accepts it, Meta publishes the post even when AutoPost Studio is closed or the computer is off. The app does not run a detached scheduler or retry a submission that Meta did not accept.
+- **Managing scheduled posts:** use **Manage schedules in Meta** or Meta Business Suite to view, edit, pause, or cancel accepted schedules. Meta is the source of truth. **Delete selected** in AutoPost Studio only removes local metadata/images; it does not cancel a post stored by Meta.
 - **Scheduler deletion:** select one or multiple rows and choose **Delete selected**. After confirmation, the matching sidecar files and image files are deleted. Images shared by another remaining scheduler record are preserved.
-- **Credential health:** the background worker checks the saved Facebook Page token and configured hosted caption-provider keys at startup and periodically. Providers may not reveal token expiration dates; invalid/revoked credentials are detected from authentication responses and shown as Windows notifications. Ensure Windows notifications are enabled.
-- **Facebook publishing:** select one or more rows in the scheduler (Ctrl/Shift-click), then choose **Individual posts** to publish each image as a separate post or **One album post** to combine 2–10 images into one post. Individual posts use each row's caption. An album uses the first selected row's caption and requires the same Page ID; locally queued albums require the same schedule time on every selected row.
+- **Facebook publishing:** select one or more rows in the scheduler (Ctrl/Shift-click), then choose **Individual posts** to publish each image as a separate post or **One album post** to combine 2–10 images into one post. Individual posts use each row's caption. An album uses the first selected row's caption and requires the same Page ID. For an album schedule, set the shared date/time once and choose **Schedule with Facebook**.
 - **Facebook image fit:** the live preview shows the composed image at its actual aspect ratio. Facebook uploads are optimized as JPEG without adding a canvas, side fill, or crop, so the uploaded file contains the image itself only. Facebook's own surrounding Page/feed layout may still show its display background depending on screen width; the app does not bake any extra white, brown, or blurred bars into the photo.
-- **Automation CLI:** frame image folders recursively, inspect the queue as JSON, locally queue posts, and publish/schedule posts through Facebook Page APIs.
+- **Automation CLI:** frame image folders recursively, inspect saved post metadata, and publish/schedule posts through Facebook Page APIs.
 
 ## Data and output folders
 
-In a source checkout, the app uses folders inside the project directory. For a PyInstaller executable, it uses the directory containing the `.exe`. The app creates these folders when needed:
+In a source checkout, the app uses folders inside the project directory. For a packaged app, it stores writable data under the current user's application data directory (`%LOCALAPPDATA%\AutoPost Studio` on Windows), not beside the executable. The app creates these folders when needed:
 
 ```text
-AutoPost Studio/
+%LOCALAPPDATA%\AutoPost Studio\
 ├── data/
 │   ├── preferences.json
 │   └── recent_activity.json
@@ -69,18 +69,31 @@ For an app posting to Pages owned/managed by your business portfolio, use a Syst
 2. Open [Meta Business Settings](https://business.facebook.com/settings/), go to **Users → System Users**, and create a System User. Use the least-privileged role that can manage the required Page/app assets.
 3. Assign the target **Page** to the System User with the permission/task that allows creating content. Assign the **Meta app** to that System User as required by the dashboard.
 4. Select the System User and choose **Generate token**. Select the correct app, grant only the current Page publishing permissions required by the endpoints, and choose the longest supported expiration option (Meta may offer a non-expiring option for eligible System User setups). Never request `publish_actions`.
-5. In AutoPost Studio open **Options → APIs…**, enter the target Page ID and System User token, then choose **Test Page access**. This makes a read-only Graph API request to confirm the token can access that Page; it does not publish or fully validate write permissions. Save when the Page name is shown.
+5. In AutoPost Studio open **Options → Facebook Pages…**, enter the target Page ID and System User token, then choose **Test Page access**. This makes a read-only Graph API request to confirm the token can access that Page; it does not publish or fully validate write permissions. Save when the Page name is shown.
 6. Select the Page ID for the posts in the scheduler and try a normal publish. If Meta still rejects publishing, check the Page asset assignment, app assignment, token's granted permissions, app access/review status, and Page content-creation task in Business Settings.
+
+For people outside the app's roles to use a developer app, switch it to Live and request App Review / Advanced Access for the permissions Meta requires. Meta's review/access requirements depend on the app and business configuration; the app dashboard is authoritative. A token that passes the read-only Page access test may still lack permission to create or schedule posts.
 
 An access token stored by AutoPost Studio is persisted in the operating-system credential vault (Windows Credential Manager); it is not stored in the preferences file. **Persistence of the stored string is different from extending its validity:** Meta can still expire or revoke it if the token's selected expiration is reached, a permission is removed, the app or Page assignment changes, the System User is disabled, or Meta invalidates it for security/policy reasons. Check Meta's token debugger / Business Settings token details when posting later fails, then generate a replacement and save it in the app. Do not share tokens or put them in screenshots, source code, logs, sidecars, or command history.
 
 Do not put a Meta **App Secret** in the desktop application or executable. For a distributed app with unrelated Page owners, use a proper Facebook Login OAuth flow and a secure server to perform app-secret token exchanges; a desktop binary cannot safely hold that secret. Meta describes System User tokens and token lifetimes in its [access token documentation](https://developers.facebook.com/documentation/facebook-login/guides/access-tokens/). Even tokens described as long-lived or non-expiring remain revocable.
 
-In **Post Scheduler**, select one or more rows (Ctrl/Shift-click), choose **Individual posts** or **One album post**, and set the Page ID and schedule time (`YYYY-MM-DD HH:MM`). Choose **Queue selection** to save a local schedule; it is not submitted to Meta ahead of time. The background worker publishes it when the selected local time arrives. Individual posts use each row's caption. An album uses the first selected row's caption and requires one shared schedule time. **Publish selection now** publishes immediately after confirmation. Merely saving a local draft does not queue or publish it.
+### Schedule from AutoPost Studio
 
-The command-line publishing utility's optional `--schedule` argument uses Meta's scheduled-publishing API; its accepted schedule window and other limits are enforced by Meta and may change. The desktop scheduler instead queues work locally and requires its background worker to be running at the selected time. Never share an access token. Revoke compromised tokens from Meta's business/developer settings.
+AutoPost Studio sends each schedule request to Meta immediately; it does not retain a local job that needs the app or computer to be running later.
 
-Album posts use Meta's supported multi-photo Page post flow: upload each image as unpublished, then submit one `/page-id/feed` post with the uploaded photo IDs. Locally queued albums use this flow when their scheduled time arrives. The command-line `--schedule` option uses Meta's scheduled feed request. If the feed request fails after photos were uploaded, the app reports this; unused unpublished uploads are temporary and Meta removes them after about 24 hours. See Meta's [Page photo reference](https://developers.facebook.com/docs/graph-api/reference/page/photos/) for current API details.
+1. Finish the Meta Page/token setup above and confirm **Test Page access** succeeds in **Options → Facebook Pages…**.
+2. Open **File → Post Scheduler…**. Make sure each selected row has the correct Facebook Page ID, caption, and image.
+3. Select one or more rows using Ctrl-click or Shift-click. Choose **Individual posts** if each image should become its own post, or **One album post** to combine 2–10 images as one Page post.
+4. For individual posts, set the desired date/time in each selected row. For an album, set the one **Shared album date/time** control; its selected images are submitted together using the first selected row's caption.
+5. Choose **Schedule with Facebook** and confirm. The app uploads the image(s) and sends the scheduled-publishing request to Meta. A successful result appears with status `scheduled` and Meta's post ID; that status records acceptance and is not a live sync of Meta's later publishing state.
+6. Open [Meta Business Suite](https://business.facebook.com/) and use its Planner or scheduled content area to confirm the post appears. Meta's navigation labels can vary by account and Page.
+
+The desktop GUI enforces a schedule window of 10 minutes to 30 days ahead. Times are entered in the computer's local time zone; verify the Page's time-zone display in Meta Business Suite. Only schedules Meta has accepted are managed by Meta: the app must have internet while submitting and cannot schedule offline. If submission fails, the app reports the error and leaves the item available to correct and submit again. Avoid retrying when a network timeout leaves acceptance uncertain; first check Meta Business Suite to avoid a duplicate.
+
+To edit, pause, or cancel an accepted post, use Meta Business Suite. **Delete selected** in AutoPost Studio removes local sidecar/image files only and does not cancel or change Meta's copy. Previously saved `queued` entries from the retired local-worker version were never submitted to Meta; select them and use **Schedule with Facebook** to submit them now. If an older app version left its detached worker running, close that old process once from Task Manager; this version does not launch it.
+
+Album scheduling uses Meta's multi-photo Page post flow: upload each image as unpublished, then create one scheduled `/page-id/feed` post attaching those photo IDs. If the feed request fails after uploads, AutoPost Studio reports the error; unused unpublished uploads are temporary and Meta may remove them. See Meta's [Page photo reference](https://developers.facebook.com/docs/graph-api/reference/page/photos/) and [Page feed reference](https://developers.facebook.com/docs/graph-api/reference/page/feed/) for current API requirements and limits.
 
 CLI publishing can use `FB_PAGE_ID` and `FB_PAGE_TOKEN` environment variables, or the saved credential-vault token:
 
@@ -125,13 +138,10 @@ python main.py cli frame .\frame.png .\portrait.jpg --output .\outputs\portrait.
 # Frame a folder, including nested folders while preserving their relative paths
 python main.py cli frame .\frame.png .\incoming --output .\outputs --recursive --fit contain
 
-# Queue an image for local publishing by the background worker
-python main.py cli queue add .\outputs\portrait.png --caption "A new post" --schedule "2026-10-05 18:30" --page-id YOUR_PAGE_ID
+# List saved post metadata, filter by status, and emit JSON for automation
+python main.py cli queue list --status scheduled --json
 
-# List queue entries, filter by status, and emit JSON for automation
-python main.py cli queue list --status queued --json
-
-# Delete requires explicit confirmation and removes the sidecar and unshared image
+# Delete local metadata requires explicit confirmation (does not cancel Meta schedules)
 python main.py cli queue delete POST_ID --yes
 
 # Publish immediately, or submit directly to Meta's schedule with --schedule
@@ -142,7 +152,7 @@ python main.py cli publish .\outputs\portrait.png "A new post"
 python main.py cli publish .\outputs\portrait.png "A new post" --schedule "2026-10-05 18:30"
 ```
 
-`queue add` requires a future local time and uses the saved Page ID if `--page-id` is omitted. It writes a `.autopost` sidecar to the configured scheduler folder. The GUI background worker must be running when the post becomes due. `queue delete` deliberately requires `--yes` because it removes files; a shared image is preserved if another post references it. The `publish` command sends the request to Facebook immediately unless `--schedule` is supplied, which delegates scheduled publishing to Meta.
+`queue list` and `queue delete` operate on local `.autopost` metadata. Local queue submission has been removed; use the scheduler GUI or `publish --schedule` to submit an actual schedule to Meta. `queue delete` deliberately requires `--yes` because it removes local files; a shared image is preserved if another record references it. Deleting a local record does not cancel an accepted Meta schedule.
 
 Run `python main.py cli --help`, `python main.py cli queue --help`, or `python main.py cli frame --help` to see options. The in-app terminal supports command history with the Up/Down keys. Paths containing spaces should be quoted.
 
@@ -167,7 +177,7 @@ python main.py cli frame .\frame.png .\portrait.jpg --quality 92 --anchor 0.5 0.
 python main.py cli frame --help
 ```
 
-CLI options include `--output`, `--fit cover|contain`, `--anchor X Y`, `--quality 1..100`, `--recursive`, and `--verbose`. By default, CLI-framed images are saved to the app's `outputs` folder (beside the executable when packaged); use `--output` to select another destination. The frame should be a transparent PNG. Folder mode processes supported images directly within the folder by default; `--recursive` includes nested folders and preserves their relative output paths. It reports skipped images and returns a non-zero status if processing is incomplete.
+CLI options include `--output`, `--fit cover|contain`, `--anchor X Y`, `--quality 1..100`, `--recursive`, and `--verbose`. By default, CLI-framed images are saved to the app's `outputs` folder (under the current user's application data directory when packaged); use `--output` to select another destination. The frame should be a transparent PNG. Folder mode processes supported images directly within the folder by default; `--recursive` includes nested folders and preserves their relative output paths. It reports skipped images and returns a non-zero status if processing is incomplete.
 
 ## Build a Windows executable
 
@@ -179,13 +189,12 @@ python -m pip install pyinstaller
 pyinstaller --noconfirm --windowed --name "AutoPost Studio" --icon "app_icon.ico" --add-data "app_icon.ico;." --add-data "frame_sample.png;." main.py
 ```
 
-For a repeatable build recipe, a matching spec file is also included at `AutoPost_Studio.spec`. It bundles the application icon and default sample frame without needing to retype the `--add-data` arguments manually. The executable is written below `dist\AutoPost Studio\`. The root-level `app_icon.ico` sets the Windows executable icon and is also loaded for the Qt application/window; replace it to customize the icon. Distribute the complete PyInstaller output (or use PyInstaller's `--onefile` if desired) and ensure the account running it can write beside the executable; otherwise choose an output folder with write permission. The app creates `data`, `logs`, and `outputs` alongside the executable at first launch. Remove `--add-data "frame_sample.png;."` if you do not want the default frame.
+For a repeatable build recipe, a matching spec file is also included at `AutoPost_Studio.spec`. It bundles the application icon and default sample frame without needing to retype the `--add-data` arguments manually. The executable is written below `dist\AutoPost Studio\`. The root-level `app_icon.ico` sets the Windows executable icon and is loaded for the Qt application/window from the bundle. For a packaged app, the Qt window also checks for `app_icon.ico` beside the executable first, so a replacement icon can be used there without rebuilding. Install under `Program Files` as usual; logs, preferences, and default outputs are stored per-user under `%LOCALAPPDATA%\AutoPost Studio`. Remove `--add-data "frame_sample.png;."` if you do not want the default frame.
 
 ## Development and validation
 
 - `src/imaging.py`: image loading and compositing.
 - `src/scheduler.py`: `.autopost` JSON records.
-- `src/scheduler_service.py`: detached local scheduling worker.
 - `src/captions.py`: text-only Groq, OpenRouter, Gemini, and Ollama caption requests.
 - `src/facebook.py`: Facebook Page Graph API requests.
 - `src/storage.py`: preferences, activity, application paths, and logs.

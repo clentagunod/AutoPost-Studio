@@ -1,0 +1,46 @@
+AUTOPOST STUDIO
+END USER LICENSE AGREEMENT (EULA)
+
+Version 1.0
+Effective date: October 4, 2026
+
+IMPORTANT: PLEASE READ THIS AGREEMENT BEFORE INSTALLING OR USING AUTOPOST STUDIO.
+
+1. ACCEPTANCE
+By installing, accessing, or using AutoPost Studio ("Software"), you agree to be bound by this End User License Agreement ("Agreement"). If you do not agree, do not install or use the Software.
+
+2. LICENSE
+Subject to this Agreement, you are granted a limited, non-exclusive, non-transferable, revocable license to install and use the Software on devices that you own or are authorized to use.
+
+3. YOUR CONTENT AND ACCOUNTS
+You remain responsible for all posts, media, captions, accounts, credentials, access tokens, and other content used with the Software. You must have the necessary rights and permissions to publish content to any connected platform.
+
+4. THIRD-PARTY PLATFORMS
+AutoPost Studio may connect to third-party services such as social-media platforms and their APIs. Those services are governed by their own terms, policies, permissions, API limits, and availability. AutoPost Studio does not guarantee that a third-party platform will accept, publish, schedule, or retain any particular post.
+
+5. AUTOMATION
+You are responsible for configuring schedules, destinations, content, and publishing permissions correctly. You must use the Software in compliance with applicable laws and the rules of every platform you connect to. Do not use the Software to spam, impersonate others, distribute unlawful content, or bypass platform restrictions.
+
+6. SECURITY
+You are responsible for protecting your computer, passwords, API credentials, access tokens, and connected accounts. Do not share private access tokens or credentials with unauthorized persons.
+
+7. UPDATES
+The Software may be updated from time to time. Updates may change features, integrations, API compatibility, or system requirements.
+
+8. DISCLAIMER
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW. NO WARRANTY IS MADE THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, OR COMPATIBLE WITH EVERY THIRD-PARTY SERVICE.
+
+9. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE DEVELOPER SHALL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR LOSS-OF-PROFIT DAMAGES ARISING FROM USE OF OR INABILITY TO USE THE SOFTWARE.
+
+10. TERMINATION
+This license terminates if you materially violate this Agreement. Upon termination, you must stop using the Software and remove it from devices under your control.
+
+11. GOVERNING LAW
+This Agreement shall be interpreted under the laws applicable to the developer and the user's jurisdiction, subject to any mandatory consumer protections that cannot legally be excluded.
+
+12. CONTACT
+For licensing, support, or other questions, contact the AutoPost Studio developer through the official support channel provided with your application.
+
+AutoPost Studio
+Copyright © 2026 ClentIndustries. All rights reserved.

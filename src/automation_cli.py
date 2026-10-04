@@ -5,17 +5,22 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
 from .facebook_cli import main as facebook_cli_main
-from .imaging import SUPPORTED_EXTS
-from .scheduler import PostRecord, delete_post_files, load_posts, save_post
+from .scheduler import PostRecord, delete_post_files, load_posts
 from .storage import OUTPUT_DIR, load_preferences
 
-POST_STATUSES = ("draft", "queued", "processing", "published", "failed")
-SCHEDULE_FORMAT = "%Y-%m-%d %H:%M"
+POST_STATUSES = (
+    "draft",
+    "queued",
+    "paused",
+    "processing",
+    "scheduled",
+    "published",
+    "failed",
+)
 
 
 def _scheduler_folder() -> Path:
@@ -45,20 +50,15 @@ def _build_parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Publish now or submit a post to Meta's scheduler",
     )
-    status = commands.add_parser("status", help="Show workspace and queue status")
+    status = commands.add_parser("status", help="Show workspace and post status")
     status.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
-    queue = commands.add_parser("queue", help="Manage the local publishing queue")
+    queue = commands.add_parser(
+        "queue", help="Inspect or delete local post metadata"
+    )
     queue_commands = queue.add_subparsers(dest="queue_command", required=True)
 
-    add = queue_commands.add_parser("add", help="Queue an image for local publishing")
-    add.add_argument("image", type=Path)
-    add.add_argument("--caption", default="")
-    add.add_argument("--schedule", required=True, help="Local time: YYYY-MM-DD HH:MM")
-    add.add_argument("--page-id", help="Facebook Page ID (defaults to saved settings)")
-    add.add_argument("--json", action="store_true", help="Print the created record as JSON")
-
-    listing = queue_commands.add_parser("list", help="List local posts")
+    listing = queue_commands.add_parser("list", help="List saved posts")
     listing.add_argument("--status", choices=POST_STATUSES)
     listing.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
@@ -117,54 +117,6 @@ def _run_status(as_json: bool) -> int:
         print(f"Scheduler folder: {folder}")
         print(f"Posts: {len(records)}")
         print("Status: " + ", ".join(f"{key}={value}" for key, value in counts.items()))
-    return 0
-
-
-def _queue_add(args: argparse.Namespace) -> int:
-    image = args.image.expanduser().resolve()
-    if not image.is_file():
-        print(f"Image file not found: {image}", file=sys.stderr)
-        return 1
-    if image.suffix.lower() not in SUPPORTED_EXTS:
-        print(
-            f"Unsupported image type '{image.suffix}'. Supported: "
-            + ", ".join(sorted(SUPPORTED_EXTS)),
-            file=sys.stderr,
-        )
-        return 1
-    try:
-        scheduled = datetime.strptime(args.schedule, SCHEDULE_FORMAT)
-    except ValueError:
-        print("Schedule must use YYYY-MM-DD HH:MM local time.", file=sys.stderr)
-        return 1
-    if scheduled <= datetime.now():
-        print("Schedule must be a future local time.", file=sys.stderr)
-        return 1
-
-    preferences = load_preferences()
-    page_id = (args.page_id or str(preferences.get("facebook_page_id", ""))).strip()
-    if not page_id:
-        print("Provide --page-id or configure a Facebook Page ID in the app.", file=sys.stderr)
-        return 1
-    record = PostRecord(
-        image=str(image),
-        caption=args.caption,
-        scheduled_at=scheduled.strftime(SCHEDULE_FORMAT),
-        page_id=page_id,
-        status="queued",
-    )
-    try:
-        sidecar = save_post(record, _scheduler_folder())
-    except OSError as exc:
-        print(f"Could not queue image: {exc}", file=sys.stderr)
-        return 1
-
-    if args.json:
-        _write_json({**_post_to_dict(record), "sidecar": str(sidecar)})
-    else:
-        print(f"Queued {image.name} for {record.scheduled_at} (local time).")
-        print(f"Post ID: {record.id}")
-        print(f"Metadata: {sidecar}")
     return 0
 
 
@@ -228,8 +180,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "status":
         return _run_status(args.json)
     if args.command == "queue":
-        if args.queue_command == "add":
-            return _queue_add(args)
         if args.queue_command == "list":
             return _queue_list(args.status, args.json)
         if args.queue_command == "delete":

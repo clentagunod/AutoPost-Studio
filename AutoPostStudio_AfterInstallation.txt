@@ -1,0 +1,28 @@
+AUTOPOST STUDIO INSTALLATION COMPLETE
+
+AutoPost Studio has been installed successfully.
+
+NEXT STEPS
+
+1. Launch AutoPost Studio.
+2. Open the account or platform connection settings.
+3. Connect the social-media account(s) you are authorized to manage.
+4. Configure your publishing settings.
+5. Create a test post and verify that it is published correctly.
+6. Create your schedule and enable automatic publishing.
+
+SECURITY REMINDER
+
+Never share your passwords, API secrets, access tokens, or private credentials. Store credentials securely and revoke tokens that you no longer use.
+
+IMPORTANT
+
+Before enabling automation, verify:
+• The correct account/page is selected.
+• The correct publishing permissions are granted.
+• Your scheduled date and time are correct.
+• Your content complies with the policies of the destination platform.
+
+Thank you for using AutoPost Studio.
+
+Copyright © 2026 ClentIndustries. All rights reserved.

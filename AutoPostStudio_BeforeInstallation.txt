@@ -1,0 +1,21 @@
+WELCOME TO AUTOPOST STUDIO
+
+Thank you for installing AutoPost Studio.
+
+AutoPost Studio is designed to help you prepare, schedule, and automate social-media publishing from one application.
+
+BEFORE YOU CONTINUE
+
+• Make sure you have permission to use every social-media account you connect.
+• Keep your account credentials and API access tokens private.
+• Check the publishing rules and API policies of each connected platform.
+• Review your scheduled posts before enabling automatic publishing.
+• An internet connection may be required for connected-platform features.
+
+IMPORTANT
+
+Third-party platforms can change their APIs, permissions, rate limits, or publishing requirements. A successful setup inside AutoPost Studio does not guarantee that a third-party platform will publish every post.
+
+If you are installing AutoPost Studio for the first time, we recommend completing the account/API connection setup after installation and testing with a single post before enabling a larger automation schedule.
+
+Click Next to continue the installation.

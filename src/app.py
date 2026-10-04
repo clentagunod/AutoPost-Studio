@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
 import shlex
-import subprocess
 import sys
 import uuid
 from datetime import datetime
@@ -30,6 +28,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox as QtMessageBox,
     QPlainTextEdit,
@@ -48,7 +47,14 @@ from PySide6.QtWidgets import (
 
 from .captions import generate_caption
 from .captions import PROVIDER_DEFAULTS
-from .config import APP_NAME, APP_VERSION, DEFAULT_FRAME_PATH, ICON_PATH
+from .config import (
+    APP_INSTALL_DIR,
+    APP_NAME,
+    APP_VERSION,
+    DEFAULT_FRAME_PATH,
+    ICON_PATH,
+    PREFERENCES_PATH,
+)
 from .facebook import FacebookError, post_album, post_photo, validate_page_access
 from .imaging import (
     SUPPORTED_EXTS,
@@ -60,16 +66,56 @@ from .imaging import (
 )
 from .scheduler import PostRecord, delete_post_files, load_posts, save_post
 from .storage import (
-    APP_DIR,
     OUTPUT_DIR,
-    PROJECT_ROOT,
     configure_logging,
     load_activity,
     load_preferences,
     record_activity,
     save_json,
 )
-from .vault import get_secret, set_secret
+from .vault import delete_secret, get_secret, set_secret
+
+META_MIN_SCHEDULE_SECONDS = 10 * 60
+META_MAX_SCHEDULE_SECONDS = 30 * 24 * 60 * 60
+
+
+def _facebook_page_secret_name(page_id: str) -> str:
+    return f"facebook_page_token_{page_id}"
+
+
+def _configured_facebook_pages(
+    preferences: dict[str, Any],
+) -> list[dict[str, str]]:
+    saved_pages = preferences.get("facebook_pages")
+    pages: list[dict[str, str]] = []
+    seen_page_ids: set[str] = set()
+    if isinstance(saved_pages, list):
+        for value in saved_pages:
+            if not isinstance(value, dict):
+                continue
+            page_id = str(value.get("page_id", "")).strip()
+            name = str(value.get("name", "")).strip()
+            if page_id and page_id not in seen_page_ids:
+                pages.append({"name": name or page_id, "page_id": page_id})
+                seen_page_ids.add(page_id)
+    elif preferences.get("facebook_page_id"):
+        page_id = str(preferences["facebook_page_id"]).strip()
+        if page_id:
+            pages.append({"name": page_id, "page_id": page_id})
+    return pages
+
+
+def _validate_meta_schedule(schedule_at: datetime) -> None:
+    seconds_until_schedule = (schedule_at - datetime.now()).total_seconds()
+    if not (
+        META_MIN_SCHEDULE_SECONDS
+        <= seconds_until_schedule
+        <= META_MAX_SCHEDULE_SECONDS
+    ):
+        raise ValueError(
+            "Meta accepts scheduled posts from 10 minutes to 30 days in advance."
+        )
+
 
 COLORS = {
     "background": "#f4f6f8",
@@ -287,14 +333,18 @@ class PublishWorker(QThread):
     def __init__(
         self,
         records: list[PostRecord],
-        token: str,
+        tokens: str | dict[str, str],
         scheduled: bool,
         schedule_times: list[datetime | None],
         album: bool,
     ) -> None:
         super().__init__()
         self.records = records
-        self.token = token
+        self.tokens = (
+            tokens
+            if isinstance(tokens, dict)
+            else {record.page_id: tokens for record in records}
+        )
         self.scheduled = scheduled
         self.schedule_times = schedule_times
         self.album = album
@@ -309,7 +359,7 @@ class PublishWorker(QThread):
                 )
                 result = post_album(
                     self.records[0].page_id,
-                    self.token,
+                    self.tokens[self.records[0].page_id],
                     [record.image for record in self.records],
                     self.records[0].caption,
                     self.schedule_times[0],
@@ -323,11 +373,12 @@ class PublishWorker(QThread):
                     self.progress.emit(
                         -1,
                         total,
-                        f"Publishing {index} of {total} · {Path(record.image).name}",
+                        f"{'Scheduling' if self.scheduled else 'Publishing'} "
+                        f"{index} of {total} · {Path(record.image).name}",
                     )
                     result = post_photo(
                         record.page_id,
-                        self.token,
+                        self.tokens[record.page_id],
                         record.image,
                         record.caption,
                         schedule_at,
@@ -497,15 +548,19 @@ class SchedulerDialog(QDialog):
         screen = self.screen()
         available = screen.availableGeometry() if screen else self.geometry()
         self.resize(
-            min(1120, max(580, round(available.width() * 0.92))),
-            min(560, max(360, round(available.height() * 0.82))),
+            min(available.width(), max(520, min(680, round(available.width() * 0.68)))),
+            min(available.height(), max(360, min(500, round(available.height() * 0.72)))),
         )
         layout = QVBoxLayout(self)
         hint = QLabel(
-            "Select a date from the calendar and set local time. Scheduled posts run "
-            "when the AutoPost Studio background worker is active."
+            "Scheduling submits the post directly to Meta. Once Meta accepts it, "
+            "the post publishes even when AutoPost Studio is closed. For an album, "
+            "select 2–10 rows and set its shared date and time below. An internet "
+            "connection is required to submit; Meta accepts times 10 minutes to "
+            "30 days ahead."
         )
         hint.setObjectName("mutedText")
+        hint.setWordWrap(True)
         layout.addWidget(hint)
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -551,33 +606,102 @@ class SchedulerDialog(QDialog):
         publish_options.addWidget(self.post_mode)
         publish_options.addStretch(1)
         layout.addLayout(publish_options)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        save_button = buttons.addButton(
-            "Save changes", QDialogButtonBox.ButtonRole.ApplyRole
+        album_schedule_row = QHBoxLayout()
+        self.album_schedule_label = QLabel("Shared album date/time (local)")
+        self.album_schedule = QDateTimeEdit()
+        self.album_schedule.setCalendarPopup(True)
+        self.album_schedule.setDisplayFormat("yyyy-MM-dd HH:mm")
+        album_now = QDateTime.currentDateTime()
+        self.album_schedule.setMinimumDateTime(album_now)
+        self.album_schedule.setDateTime(album_now.addSecs(15 * 60))
+        album_schedule_row.addWidget(self.album_schedule_label)
+        album_schedule_row.addWidget(self.album_schedule)
+        album_schedule_row.addStretch(1)
+        layout.addLayout(album_schedule_row)
+        self.post_mode.currentIndexChanged.connect(
+            self._update_album_schedule_visibility
         )
-        post_button = buttons.addButton(
-            "Publish selection now", QDialogButtonBox.ButtonRole.ActionRole
+        self._update_album_schedule_visibility()
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 8, 0, 0)
+        footer_layout.setSpacing(8)
+        utility_row = QHBoxLayout()
+        save_button = QPushButton("Save")
+        manage_schedules_button = QPushButton("Meta schedules")
+        delete_button = QPushButton("Delete")
+        save_button.setToolTip("Save changes to the selected scheduler items.")
+        manage_schedules_button.setToolTip(
+            "Open Meta Business Suite to manage accepted schedules."
         )
+        delete_button.setToolTip(
+            "Delete selected scheduler items and their local files."
+        )
+        delete_button.setObjectName("dangerButton")
         save_button.clicked.connect(lambda: self._save_changes())
-        schedule_button = buttons.addButton(
-            "Queue selection", QDialogButtonBox.ButtonRole.ActionRole
-        )
-        schedule_button.clicked.connect(self._submit_schedule)
-        post_button.clicked.connect(self._post_selected)
-        self.publish_action_buttons = [save_button, post_button, schedule_button]
-        delete_button = buttons.addButton(
-            "Delete selected", QDialogButtonBox.ButtonRole.DestructiveRole
-        )
+        manage_schedules_button.clicked.connect(self._open_meta_business_suite)
         delete_button.clicked.connect(self._delete_selected)
+        utility_row.addWidget(save_button)
+        utility_row.addStretch(1)
+        utility_row.addWidget(manage_schedules_button)
+        utility_row.addWidget(delete_button)
+        footer_layout.addLayout(utility_row)
+
+        action_row = QHBoxLayout()
+        close_button = QPushButton("Close")
+        post_button = QPushButton("Publish now")
+        schedule_button = QPushButton("Schedule")
+        post_button.setToolTip("Publish the selected images immediately.")
+        schedule_button.setToolTip(
+            "Submit the selected images to Facebook for scheduled publishing."
+        )
+        schedule_button.setObjectName("primaryButton")
+        close_button.clicked.connect(self.reject)
+        post_button.clicked.connect(self._post_selected)
+        schedule_button.clicked.connect(self._submit_schedule)
+        for button in (
+            save_button,
+            manage_schedules_button,
+            delete_button,
+            close_button,
+            post_button,
+            schedule_button,
+        ):
+            button.setSizePolicy(
+                QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+            )
+            button.setMinimumHeight(36)
+        action_row.addWidget(close_button)
+        action_row.addStretch(1)
+        action_row.addWidget(post_button)
+        action_row.addWidget(schedule_button)
+        footer_layout.addLayout(action_row)
+        self.publish_action_buttons = [
+            save_button,
+            post_button,
+            schedule_button,
+            delete_button,
+        ]
         self.delete_button = delete_button
-        self.close_button = buttons.button(QDialogButtonBox.StandardButton.Close)
+        self.close_button = close_button
         self._publish_worker: PublishWorker | None = None
-        self._status_timer = QTimer(self)
-        self._status_timer.setInterval(5_000)
-        self._status_timer.timeout.connect(self._refresh_background_statuses)
-        self._status_timer.start()
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        layout.addWidget(footer)
+
+    def _update_album_schedule_visibility(self, *_: Any) -> None:
+        visible = self.post_mode.currentData() == "album"
+        self.album_schedule_label.setVisible(visible)
+        self.album_schedule.setVisible(visible)
+
+    def _open_meta_business_suite(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        if not QDesktopServices.openUrl(QUrl("https://business.facebook.com/")):
+            QMessageBox.warning(
+                self,
+                "Could not open Meta",
+                "Open https://business.facebook.com/ in a browser to manage or cancel scheduled posts.",
+            )
 
     def _populate(self) -> None:
         self.table.setRowCount(len(self.records))
@@ -593,10 +717,20 @@ class SchedulerDialog(QDialog):
             )
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col in {0, 5, 6}:
+                if col in {0, 1, 3, 4, 5, 6}:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 item.setToolTip(record.image if col == 0 else value)
                 self.table.setItem(row, col, item)
+            status_details = [
+                value for value in (record.last_error, record.remote_id) if value
+            ]
+            if record.status == "scheduled":
+                status_details.insert(
+                    0,
+                    "Meta accepted this schedule. AutoPost Studio does not track "
+                    "when Meta later publishes it; check Meta Business Suite.",
+                )
+            self.table.item(row, 5).setToolTip("\n".join(status_details))
             schedule = QDateTimeEdit()
             schedule.setCalendarPopup(True)
             schedule.setDisplayFormat("yyyy-MM-dd HH:mm")
@@ -625,28 +759,10 @@ class SchedulerDialog(QDialog):
                     )
             else:
                 schedule.setDateTime(schedule.minimumDateTime())
+            schedule.setEnabled(record.status not in {"scheduled", "published"})
             self.table.setCellWidget(row, 2, schedule)
             if record.last_error:
                 self.table.item(row, 5).setToolTip(record.last_error)
-
-    def _refresh_background_statuses(self) -> None:
-        try:
-            latest = {record.id: record for record in load_posts(self.folder)}
-        except (OSError, ValueError):
-            logging.getLogger("frame_studio").exception(
-                "Could not refresh scheduler status"
-            )
-            return
-        for row, record in enumerate(self.records):
-            updated = latest.get(record.id)
-            if updated is None:
-                continue
-            record.status = updated.status
-            record.remote_id = updated.remote_id
-            record.last_error = updated.last_error
-            status_item = self.table.item(row, 5)
-            status_item.setText(updated.status)
-            status_item.setToolTip(updated.last_error or updated.remote_id)
 
     def _save_changes(self, show_message: bool = True) -> bool:
         try:
@@ -715,26 +831,81 @@ class SchedulerDialog(QDialog):
                 "Select one or more image rows before submitting a schedule.",
             )
             return
-        if not self._save_changes(show_message=False):
-            return
         album = self.post_mode.currentData() == "album"
+        statuses_that_can_be_submitted = {
+            "draft",
+            "queued",
+            "paused",
+            "processing",
+            "failed",
+        }
+        if any(
+            record.status not in statuses_that_can_be_submitted
+            for record in records
+        ):
+            QMessageBox.warning(
+                self,
+                "Post already submitted",
+                "Only drafts, legacy local-queue items, or failed submissions can be sent to Meta. "
+                "Manage already scheduled posts in Meta Business Suite.",
+            )
+            return
+        if any(record.status == "processing" for record in records):
+            answer = QMessageBox.question(
+                self,
+                "Check Meta before retrying",
+                "A selected post was processing in the retired local scheduler. "
+                "It may already have reached Facebook. Check Meta Business Suite for "
+                "an existing scheduled or published post before submitting again. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         if album:
             if not 2 <= len(records) <= 10:
                 QMessageBox.warning(
                     self, "Select 2–10 images", "A scheduled album requires 2 to 10 images."
                 )
                 return
+            schedule_text = self.album_schedule.dateTime().toString(
+                "yyyy-MM-dd HH:mm"
+            )
+            try:
+                schedule_at = datetime.strptime(schedule_text, "%Y-%m-%d %H:%M")
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Invalid schedule time", "Choose a valid album date and time."
+                )
+                return
+            try:
+                _validate_meta_schedule(schedule_at)
+            except ValueError as exc:
+                QMessageBox.warning(
+                    self,
+                    "Invalid schedule time",
+                    str(exc),
+                )
+                return
+            rows_by_id = {
+                record.id: row for row, record in enumerate(self.records)
+            }
+            for record in records:
+                schedule = self.table.cellWidget(rows_by_id[record.id], 2)
+                if not isinstance(schedule, QDateTimeEdit):
+                    QMessageBox.critical(
+                        self,
+                        "Could not set album date",
+                        "A schedule date/time control is missing.",
+                    )
+                    return
+                schedule.setDateTime(self.album_schedule.dateTime())
+        if not self._save_changes(show_message=False):
+            return
+        if album:
             if len({record.page_id for record in records}) != 1 or not records[0].page_id:
                 QMessageBox.warning(
                     self, "One Page required", "All album images must have the same Page ID."
-                )
-                return
-            times = {record.scheduled_at for record in records}
-            if "" in times or len(times) != 1:
-                QMessageBox.warning(
-                    self,
-                    "Use one schedule time",
-                    "For an album, select the same future date and time on every selected row.",
                 )
                 return
         if not album:
@@ -747,26 +918,10 @@ class SchedulerDialog(QDialog):
                     f"Choose a date and time for {Path(missing_time.image).name}.",
                 )
                 return
-        group_id = uuid.uuid4().hex if album else ""
-        try:
-            for record in records:
-                record.group_id = group_id
-                record.status = "queued"
-                record.last_error = ""
-                save_post(record, self.folder)
-        except OSError as exc:
-            QMessageBox.critical(self, "Could not queue posts", str(exc))
-            self.records = load_posts(self.folder)
-            self._populate()
-            return
-        self._populate()
-        self.publish_status.setText(
-            f"Queued {len(records)} post(s). The background worker will publish them at the selected local time."
-        )
-        self.publish_status.show()
-        QMessageBox.information(
-            self, "Posts queued", f"{len(records)} post(s) queued for local publishing."
-        )
+        if album:
+            self._publish_album(records, scheduled=True)
+        else:
+            self._publish_individual(records, scheduled=True)
 
     def _delete_selected(self) -> None:
         records = self._selected_records()
@@ -777,7 +932,13 @@ class SchedulerDialog(QDialog):
             self,
             "Delete selected posts?",
             f"Delete {len(records)} selected scheduler item(s), their sidecar files, "
-            "and associated images? This cannot be undone.",
+            "and associated images? This cannot be undone."
+            + (
+                "\n\nThis only removes local files. It does not cancel a post already "
+                "scheduled with Meta; cancel that post in Meta Business Suite first."
+                if any(record.status == "scheduled" for record in records)
+                else ""
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -812,10 +973,20 @@ class SchedulerDialog(QDialog):
             return None
         if not token:
             QMessageBox.warning(
-                self, "Facebook setup required", "Add a Page access token in Options → APIs."
+                self,
+                "Facebook setup required",
+                "Add a Page access token in Options → Facebook Pages.",
             )
             return None
         return token
+
+    def _facebook_tokens(
+        self, records: list[PostRecord]
+    ) -> str | dict[str, str] | None:
+        parent = self.parent()
+        if isinstance(parent, AutoPostStudio):
+            return parent._facebook_tokens_for_records(records)
+        return self._facebook_token()
 
     def _publish_individual(
         self, records: list[PostRecord], scheduled: bool
@@ -828,9 +999,11 @@ class SchedulerDialog(QDialog):
                         raise ValueError(
                             f"Enter a schedule time for {Path(record.image).name}."
                         )
-                    schedule_times.append(
-                        datetime.strptime(record.scheduled_at, "%Y-%m-%d %H:%M")
+                    schedule_at = datetime.strptime(
+                        record.scheduled_at, "%Y-%m-%d %H:%M"
                     )
+                    _validate_meta_schedule(schedule_at)
+                    schedule_times.append(schedule_at)
             except ValueError as exc:
                 QMessageBox.warning(self, "Schedule time required", str(exc))
                 return
@@ -841,8 +1014,8 @@ class SchedulerDialog(QDialog):
                 self, "Page ID required", "Enter a Facebook Page ID for every selected image."
             )
             return
-        token = self._facebook_token()
-        if not token:
+        tokens = self._facebook_tokens(records)
+        if not tokens:
             return
         action = "schedule" if scheduled else "publish"
         answer = QMessageBox.question(
@@ -857,7 +1030,7 @@ class SchedulerDialog(QDialog):
             return
 
         self._start_publish_worker(
-            records, token, scheduled, schedule_times, album=False
+            records, tokens, scheduled, schedule_times, album=False
         )
 
     def _publish_album(
@@ -883,7 +1056,7 @@ class SchedulerDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Use one schedule time",
-                    "For an album, enter the same schedule time on every selected row.",
+                    "Set one shared future date and time for every image in the album.",
                 )
                 return
             try:
@@ -895,8 +1068,15 @@ class SchedulerDialog(QDialog):
                     self, "Invalid schedule time", "Use YYYY-MM-DD HH:MM in local time."
                 )
                 return
-        token = self._facebook_token()
-        if not token:
+            try:
+                _validate_meta_schedule(schedule_at)
+            except ValueError as exc:
+                QMessageBox.warning(
+                    self, "Invalid schedule time", str(exc)
+                )
+                return
+        tokens = self._facebook_tokens(records)
+        if not tokens:
             return
         names = "\n".join(f"• {Path(record.image).name}" for record in records)
         caption = records[0].caption
@@ -919,7 +1099,7 @@ class SchedulerDialog(QDialog):
             return
         self._start_publish_worker(
             records,
-            token,
+            tokens,
             scheduled,
             [schedule_at] * len(records),
             album=True,
@@ -928,23 +1108,48 @@ class SchedulerDialog(QDialog):
     def _start_publish_worker(
         self,
         records: list[PostRecord],
-        token: str,
+        tokens: str | dict[str, str],
         scheduled: bool,
         schedule_times: list[datetime | None],
         album: bool,
     ) -> None:
-        self._set_publish_busy(True)
+        if scheduled:
+            try:
+                for record in records:
+                    record.status = "draft"
+                    record.group_id = ""
+                    record.last_error = ""
+                    save_post(record, self.folder)
+            except OSError as exc:
+                QMessageBox.critical(
+                    self,
+                    "Could not prepare Meta schedule",
+                    str(exc),
+                )
+                try:
+                    self.records = load_posts(self.folder)
+                    self._populate()
+                except (OSError, ValueError):
+                    self.log.exception(
+                        "Could not refresh records after failing to prepare Meta schedule"
+                    )
+                return
+            self._populate()
+
+        self._set_publish_busy(True, scheduled=scheduled)
         self.publish_status.setStyleSheet("")
         self.publish_progress.setStyleSheet("")
         self.publish_status.setText(
-            "Uploading album to Facebook…"
+            "Submitting album to Facebook for scheduling…"
+            if album and scheduled
+            else "Uploading album to Facebook…"
             if album
             else f"Starting Facebook {'schedule' if scheduled else 'publishing'}…"
         )
         self.publish_status.show()
         self.publish_progress.setRange(0, 0)
         self.publish_progress.show()
-        worker = PublishWorker(records, token, scheduled, schedule_times, album)
+        worker = PublishWorker(records, tokens, scheduled, schedule_times, album)
         worker.progress.connect(self._publish_progress)
         worker.finished.connect(self._publish_thread_finished)
         worker.completed.connect(
@@ -955,12 +1160,16 @@ class SchedulerDialog(QDialog):
         self._publish_worker = worker
         worker.start()
 
-    def _set_publish_busy(self, busy: bool) -> None:
+    def _set_publish_busy(self, busy: bool, scheduled: bool = False) -> None:
         for button in self.publish_action_buttons:
             button.setEnabled(not busy)
         self.close_button.setEnabled(not busy)
         if busy:
-            self.setWindowTitle("Post scheduler · Publishing…")
+            self.setWindowTitle(
+                "Post scheduler · Submitting to Meta…"
+                if scheduled
+                else "Post scheduler · Publishing…"
+            )
         else:
             self.setWindowTitle("Post scheduler")
 
@@ -985,9 +1194,11 @@ class SchedulerDialog(QDialog):
         status = "scheduled" if scheduled else "published"
         if album and results:
             post_id = str(results[0][1].get("id") or "")
+            group_id = uuid.uuid4().hex
             for record in records:
                 record.status = status
                 record.remote_id = post_id
+                record.group_id = group_id
                 try:
                     save_post(record, self.folder)
                 except OSError as exc:
@@ -1000,6 +1211,7 @@ class SchedulerDialog(QDialog):
                 record.remote_id = str(
                     result.get("post_id") or result.get("id") or ""
                 )
+                record.group_id = ""
                 completed += 1
                 try:
                     save_post(record, self.folder)
@@ -1275,10 +1487,27 @@ class AutoPostStudio(QMainWindow):
         configure_logging()
         self.log = logging.getLogger("frame_studio")
         self.preferences = load_preferences()
+        self.facebook_pages = _configured_facebook_pages(self.preferences)
+        configured_page_ids = {
+            page["page_id"] for page in self.facebook_pages
+        }
+        preferred_page_id = str(
+            self.preferences.get(
+                "active_facebook_page_id",
+                self.preferences.get("facebook_page_id", ""),
+            )
+        )
+        self.active_facebook_page_id = (
+            preferred_page_id
+            if preferred_page_id in configured_page_ids
+            else self.facebook_pages[0]["page_id"]
+            if self.facebook_pages
+            else ""
+        )
         self.dark_mode = bool(self.preferences.get("dark_mode", False))
         self.colors = dict(DARK_COLORS if self.dark_mode else COLORS)
         default_frame = DEFAULT_FRAME_PATH
-        default_photo = APP_DIR / "image.jpg"
+        default_photo = APP_INSTALL_DIR / "image.jpg"
         self.frame_path = QLineEdit(
             str(
                 self.preferences.get(
@@ -1344,6 +1573,20 @@ class AutoPostStudio(QMainWindow):
         self.mode_badge.setObjectName("badge")
         top.addWidget(self.mode_badge, alignment=Qt.AlignmentFlag.AlignTop)
         root.addLayout(top)
+
+        page_selection = QHBoxLayout()
+        current_page_label = QLabel("CURRENT FACEBOOK PAGE")
+        current_page_label.setObjectName("mutedText")
+        page_selection.addWidget(current_page_label)
+        self.current_page_combo = QComboBox()
+        self.current_page_combo.setMinimumWidth(220)
+        self.current_page_combo.currentIndexChanged.connect(
+            self._active_facebook_page_changed
+        )
+        self._refresh_page_selector()
+        page_selection.addWidget(self.current_page_combo)
+        page_selection.addStretch(1)
+        root.addLayout(page_selection)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
@@ -1533,7 +1776,7 @@ class AutoPostStudio(QMainWindow):
         self._action(view_menu, "CLI Console…", self._show_terminal)
 
         options_menu = self.menuBar().addMenu("&Options")
-        self._action(options_menu, "APIs…", self._api_settings)
+        self._action(options_menu, "Facebook Pages…", self._api_settings)
         self._action(options_menu, "Captions…", self._caption_settings)
         self._action(options_menu, "Scheduler folder…", self._choose_scheduler_folder)
 
@@ -1550,6 +1793,39 @@ class AutoPostStudio(QMainWindow):
                 self, "AutoPost Studio", f"Version {APP_VERSION}\nUpdates are not yet configured."
             ),
         )
+
+    def _refresh_page_selector(self) -> None:
+        self.current_page_combo.blockSignals(True)
+        self.current_page_combo.clear()
+        if not self.facebook_pages:
+            self.current_page_combo.addItem("No Facebook Pages configured", "")
+            self.current_page_combo.setEnabled(False)
+        else:
+            self.current_page_combo.setEnabled(True)
+            for page in self.facebook_pages:
+                label = f"{page['name']} · {page['page_id']}"
+                self.current_page_combo.addItem(label, page["page_id"])
+                self.current_page_combo.setItemData(
+                    self.current_page_combo.count() - 1,
+                    label,
+                    Qt.ItemDataRole.ToolTipRole,
+                )
+            selected_index = self.current_page_combo.findData(
+                self.active_facebook_page_id
+            )
+            self.current_page_combo.setCurrentIndex(max(0, selected_index))
+        self.current_page_combo.blockSignals(False)
+
+    def _active_facebook_page_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        page_id = str(self.current_page_combo.currentData() or "")
+        if page_id == self.active_facebook_page_id:
+            return
+        self.active_facebook_page_id = page_id
+        self.preferences["active_facebook_page_id"] = page_id
+        self.preferences["facebook_page_id"] = page_id
+        self._save_preferences()
 
     def _show_developer_info(self) -> None:
         dialog = QDialog(self)
@@ -1622,6 +1898,8 @@ class AutoPostStudio(QMainWindow):
             QPushButton:hover {{ border-color: {c['accent']}; color: {c['accent']}; }}
             #primaryButton {{ background: {c['accent']}; color: white; border-color: {c['accent']}; }}
             #primaryButton:hover {{ background: {c['accent_hover']}; color: white; }}
+            #dangerButton {{ color: {c['danger']}; border-color: {c['danger']}; }}
+            #dangerButton:hover {{ background: {c['danger']}; color: white; }}
             #previewCanvas {{ background: {c['stage']}; border: 1px solid {c['line']}; border-radius: 9px; color: {c['muted']}; padding: 12px; }}
             #galleryTile {{ background: {c['field']}; border: 1px solid {c['line']}; border-radius: 9px; }}
             #galleryImage {{ background: {c['stage']}; border-radius: 6px; color: {c['muted']}; font-size: 8pt; }}
@@ -1782,7 +2060,7 @@ class AutoPostStudio(QMainWindow):
                 PostRecord(
                     image=str(output.resolve()),
                     caption=self.caption.toPlainText().strip(),
-                    page_id=str(self.preferences.get("facebook_page_id", "")),
+                    page_id=self.active_facebook_page_id,
                 ),
                 self._scheduler_directory(),
             )
@@ -1863,7 +2141,7 @@ class AutoPostStudio(QMainWindow):
             self.quality.value(),
             str(self.output_format.currentData()),
             self.caption.toPlainText().strip(),
-            str(self.preferences.get("facebook_page_id", "")),
+            self.active_facebook_page_id,
             self._scheduler_directory(),
         )
         worker.progress.connect(self._batch_progress)
@@ -1947,10 +2225,36 @@ class AutoPostStudio(QMainWindow):
             SchedulerDialog(
                 folder,
                 self,
-                str(self.preferences.get("facebook_page_id", "")),
+                self.active_facebook_page_id,
             ).exec()
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "Scheduler unavailable", str(exc))
+
+    def _facebook_tokens_for_records(
+        self, records: list[PostRecord]
+    ) -> str | dict[str, str] | None:
+        tokens: dict[str, str] = {}
+        legacy_page_id = str(self.preferences.get("facebook_page_id", ""))
+        try:
+            for page_id in {record.page_id for record in records}:
+                token = get_secret(_facebook_page_secret_name(page_id))
+                if not token and page_id == legacy_page_id:
+                    token = get_secret("facebook_page_token")
+                if not token:
+                    QMessageBox.warning(
+                        self,
+                        "Facebook Page setup required",
+                        f"No access token is saved for Page {page_id}. "
+                        "Add the Page and its token in Options → Facebook Pages.",
+                    )
+                    return None
+                tokens[page_id] = token
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Credential vault unavailable", str(exc))
+            return None
+        if len(tokens) == 1:
+            return next(iter(tokens.values()))
+        return tokens
 
     def _scheduler_directory(self) -> Path:
         return Path(
@@ -1995,39 +2299,58 @@ class AutoPostStudio(QMainWindow):
 
     def _api_settings(self) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("API settings")
+        dialog.setWindowTitle("Facebook Pages")
+        dialog.setMinimumWidth(620)
         layout = QVBoxLayout(dialog)
+        pages_list = QListWidget()
+        pages_list.setMinimumHeight(130)
+        layout.addWidget(pages_list)
         form = QFormLayout()
-        page_id = QLineEdit(str(self.preferences.get("facebook_page_id", "")))
+        page_name = QLineEdit()
+        page_name.setPlaceholderText("A name to recognize this Page")
+        page_id = QLineEdit()
         page_id.setPlaceholderText("Your Facebook Page ID")
         page_token = QLineEdit()
         page_token.setEchoMode(QLineEdit.EchoMode.Password)
         page_token.setPlaceholderText(
-            "System User token recommended; stored in Windows Credential Manager"
+            "System User token recommended; stored in your credential vault"
         )
-        try:
-            page_token.setText(get_secret("facebook_page_token"))
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Credential vault unavailable", str(exc))
-            return
+        form.addRow("Page name", page_name)
         form.addRow("Facebook Page ID", page_id)
         form.addRow("System User / Page token", page_token)
         layout.addLayout(form)
+
         note = self._muted(
             "For a business-owned Page, create a System User in Meta Business Settings, "
             "assign the app and Page with content-creation access, then generate a token "
             "with the required Pages permissions. Never request publish_actions. "
-            "Tokens are stored in Windows Credential Manager; this does not prevent Meta "
-            "from revoking a token."
+            "Each token is stored in the operating system credential vault."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
         connection_status = QLabel("")
         connection_status.setWordWrap(True)
         layout.addWidget(connection_status)
-        test_button = QPushButton("Test Page access")
+
+        page_values: list[dict[str, str]] = []
+        try:
+            legacy_page_id = str(self.preferences.get("facebook_page_id", ""))
+            for page in self.facebook_pages:
+                token = get_secret(_facebook_page_secret_name(page["page_id"]))
+                if not token and page["page_id"] == legacy_page_id:
+                    token = get_secret("facebook_page_token")
+                page_values.append({**page, "token": token})
+        except RuntimeError as exc:
+            QMessageBox.critical(self, "Credential vault unavailable", str(exc))
+            return
 
         def test_page_access() -> None:
+            if not page_id.text().strip() or not page_token.text().strip():
+                connection_status.setText(
+                    "Enter both the Page ID and its access token before testing."
+                )
+                connection_status.setStyleSheet(f"color: {self.colors['danger']};")
+                return
             test_button.setEnabled(False)
             test_button.setText("Testing…")
             self._set_busy(True)
@@ -2041,6 +2364,7 @@ class AutoPostStudio(QMainWindow):
                     f"color: {self.colors['danger']};"
                 )
             else:
+                page_name.setText(name)
                 connection_status.setText(
                     f"Connected to Page: {name}. This confirms Page access, "
                     "but does not test publish permissions."
@@ -2051,20 +2375,174 @@ class AutoPostStudio(QMainWindow):
                 test_button.setText("Test Page access")
                 self._set_busy(False)
 
+        def show_page(index: int) -> None:
+            if not 0 <= index < len(page_values):
+                page_name.clear()
+                page_id.clear()
+                page_token.clear()
+                return
+            page = page_values[index]
+            page_name.setText(page["name"])
+            page_id.setText(page["page_id"])
+            page_token.setText(page["token"])
+            connection_status.clear()
+
+        def refresh_page_list(selected: int = -1) -> None:
+            pages_list.clear()
+            for page in page_values:
+                pages_list.addItem(f"{page['name']} · {page['page_id']}")
+            if page_values:
+                pages_list.setCurrentRow(
+                    min(max(0, selected), len(page_values) - 1)
+                )
+            else:
+                show_page(-1)
+
+        def save_page() -> bool:
+            name = page_name.text().strip()
+            identifier = page_id.text().strip()
+            token = page_token.text().strip()
+            if not name or not identifier:
+                QMessageBox.warning(
+                    dialog, "Page details required", "Enter a Page name and Page ID."
+                )
+                return False
+            existing_index = next(
+                (
+                    index
+                    for index, page in enumerate(page_values)
+                    if page["page_id"] == identifier
+                ),
+                -1,
+            )
+            if not token and existing_index >= 0:
+                token = page_values[existing_index]["token"]
+            if not token:
+                QMessageBox.warning(
+                    dialog,
+                    "Page token required",
+                    "Enter an access token for this Page.",
+                )
+                return False
+            value = {"name": name, "page_id": identifier, "token": token}
+            if existing_index >= 0:
+                page_values[existing_index] = value
+                selected_index = existing_index
+            else:
+                page_values.append(value)
+                selected_index = len(page_values) - 1
+            refresh_page_list(selected_index)
+            return True
+
+        def remove_page() -> None:
+            selected_index = pages_list.currentRow()
+            if not 0 <= selected_index < len(page_values):
+                return
+            page_values.pop(selected_index)
+            refresh_page_list(selected_index)
+
+        pages_list.currentRowChanged.connect(show_page)
+        test_button = QPushButton("Test Page access")
         test_button.clicked.connect(test_page_access)
-        layout.addWidget(test_button)
+        editor_buttons = QHBoxLayout()
+        editor_buttons.addWidget(test_button)
+        editor_buttons.addStretch(1)
+        add_button = QPushButton("Add / update Page")
+        add_button.clicked.connect(save_page)
+        editor_buttons.addWidget(add_button)
+        remove_button = QPushButton("Remove selected")
+        remove_button.clicked.connect(remove_page)
+        editor_buttons.addWidget(remove_button)
+        layout.addLayout(editor_buttons)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        refresh_page_list(
+            next(
+                (
+                    index
+                    for index, page in enumerate(page_values)
+                    if page["page_id"] == self.active_facebook_page_id
+                ),
+                0,
+            )
+        )
+
+        def save_settings() -> None:
+            if (
+                page_name.text().strip()
+                or page_id.text().strip()
+                or page_token.text().strip()
+            ) and not save_page():
+                return
             try:
-                self.preferences["facebook_page_id"] = page_id.text().strip()
-                if page_token.text().strip():
-                    set_secret("facebook_page_token", page_token.text().strip())
-                self._save_preferences()
-            except RuntimeError as exc:
-                QMessageBox.critical(self, "Credential vault unavailable", str(exc))
+                for page in page_values:
+                    if not page["token"]:
+                        raise ValueError(
+                            f"Enter an access token for Page {page['name']}."
+                        )
+                    set_secret(
+                        _facebook_page_secret_name(page["page_id"]), page["token"]
+                    )
+            except (RuntimeError, ValueError) as exc:
+                QMessageBox.critical(
+                    dialog, "Could not save Page credentials", str(exc)
+                )
+                return
+
+            active_page_ids = {page["page_id"] for page in page_values}
+            active_page_id = (
+                self.active_facebook_page_id
+                if self.active_facebook_page_id in active_page_ids
+                else page_values[0]["page_id"]
+                if page_values
+                else ""
+            )
+            updated_preferences = dict(self.preferences)
+            updated_preferences.update(
+                {
+                    "facebook_pages": [
+                        {"name": page["name"], "page_id": page["page_id"]}
+                        for page in page_values
+                    ],
+                    "active_facebook_page_id": active_page_id,
+                    "facebook_page_id": active_page_id,
+                }
+            )
+            try:
+                save_json(PREFERENCES_PATH, updated_preferences)
+            except OSError as exc:
+                QMessageBox.critical(
+                    dialog, "Could not save Page settings", str(exc)
+                )
+                return
+
+            retained_page_ids = active_page_ids
+            removed_page_ids = {
+                page["page_id"] for page in self.facebook_pages
+            } - retained_page_ids
+            self.preferences = updated_preferences
+            self.facebook_pages = [
+                {"name": page["name"], "page_id": page["page_id"]}
+                for page in page_values
+            ]
+            self.active_facebook_page_id = active_page_id
+            self._refresh_page_selector()
+            for removed_page_id in removed_page_ids:
+                try:
+                    delete_secret(_facebook_page_secret_name(removed_page_id))
+                except RuntimeError as exc:
+                    QMessageBox.warning(
+                        dialog,
+                        "Page removed with credential cleanup issue",
+                        f"The Page was removed, but its saved token could not be "
+                        f"deleted from the credential vault: {exc}",
+                    )
+            dialog.accept()
+
+        buttons.accepted.connect(save_settings)
+        dialog.exec()
 
     def _caption_settings(self) -> None:
         dialog = QDialog(self)
@@ -2239,10 +2717,13 @@ class AutoPostStudio(QMainWindow):
                 ),
                 "caption": self.caption.toPlainText() if hasattr(self, "caption") else "",
                 "dark_mode": self.dark_mode,
+                "facebook_pages": self.facebook_pages,
+                "active_facebook_page_id": self.active_facebook_page_id,
+                "facebook_page_id": self.active_facebook_page_id,
             }
         )
         try:
-            save_json(APP_DIR / "data" / "preferences.json", self.preferences)
+            save_json(PREFERENCES_PATH, self.preferences)
         except OSError:
             self.log.exception("Could not save preferences")
 
@@ -2252,48 +2733,6 @@ def main() -> None:
     app.setApplicationName(APP_NAME)
     if ICON_PATH.is_file():
         app.setWindowIcon(QIcon(str(ICON_PATH)))
-    try:
-        _launch_scheduler_service()
-    except OSError as exc:
-        logging.getLogger("frame_studio").exception(
-            "Could not start scheduler background worker"
-        )
-        QMessageBox.critical(
-            None,
-            "Scheduler service could not start",
-            f"Scheduled posts will not run while the app is closed.\n\n{exc}",
-        )
     window = AutoPostStudio()
     window.showMaximized()
     app.exec()
-
-
-def _launch_scheduler_service() -> None:
-    if _is_frozen_runtime():
-        command = [sys.executable, "--scheduler-worker"]
-    else:
-        command = [
-            sys.executable,
-            str(PROJECT_ROOT / "main.py"),
-            "--scheduler-worker",
-        ]
-    options: dict[str, Any] = {
-        "cwd": str(PROJECT_ROOT),
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-    }
-    if platform.system().casefold() == "windows":
-        options["creationflags"] = (
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.CREATE_NO_WINDOW
-        )
-    else:
-        options["start_new_session"] = True
-    subprocess.Popen(command, **options)
-
-
-def _is_frozen_runtime() -> bool:
-    return bool(vars(sys).get("frozen", False))

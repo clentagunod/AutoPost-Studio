@@ -1,19 +1,19 @@
 {
-  "frame_path": "",
-  "photo_path": "",
+  "frame_path": "C:/Users/Clent/Documents/Programming/Python/AutoPost Studio/frame_sample.png",
+  "photo_path": "C:/Users/Clent/Pictures/Screenshots/Screenshot (82).png",
   "output_path": "",
-  "fit": "cover",
+  "fit": "contain",
   "quality": 93,
   "dark_mode": true,
   "posting_target": "facebook_page",
   "output_dir": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs",
   "output_format": "png",
-  "caption": "",
+  "caption": "Celebrating Mathematics Day!\n\n#MathematicsDay #MathLove #STEM\n\n#MathematicsDay",
   "facebook_page_id": "1386715137852281",
   "caption_provider": "groq",
   "caption_endpoint": "https://api.groq.com/openai/v1",
   "caption_model": "openai/gpt-oss-120b",
-  "caption_keywords": "Cellphone Day!",
+  "caption_keywords": "Mathematics Day!",
   "caption_template": "{caption}\n\n{hashtags}",
   "caption_models": {
     "groq": "openai/gpt-oss-120b",
@@ -26,5 +26,12 @@
     "openrouter": "https://openrouter.ai/api/v1",
     "gemini": "Google Gemini API (built in)",
     "ollama": "http://localhost:11434"
-  }
+  },
+  "facebook_pages": [
+    {
+      "name": "Clent Page",
+      "page_id": "1386715137852281"
+    }
+  ],
+  "active_facebook_page_id": "1386715137852281"
 }
