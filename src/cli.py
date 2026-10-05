@@ -1,10 +1,9 @@
-"""Command-line interface retained alongside the desktop application."""
+"""Image automation commands used by the embedded AutoPost console."""
 
 from __future__ import annotations
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 from PIL import UnidentifiedImageError
@@ -38,8 +37,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    base_dir: Path | None = None,
+) -> int:
     args = parse_args(argv)
+    if base_dir is not None:
+        args.frame = _resolve_path(args.frame, base_dir)
+        args.photo = _resolve_path(args.photo, base_dir)
+        if args.output is not None:
+            args.output = _resolve_path(args.output, base_dir)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -110,5 +118,6 @@ def main(argv: list[str] | None = None) -> int:
     )
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def _resolve_path(path: Path, base_dir: Path) -> Path:
+    expanded = path.expanduser()
+    return expanded if expanded.is_absolute() else base_dir / expanded

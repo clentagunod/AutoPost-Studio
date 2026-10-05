@@ -1,16 +1,33 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
+
+project_root = Path(SPECPATH).resolve()
+sys.path.insert(0, str(project_root))
+
+from src.config import DEFAULT_FRAME_RESOURCE, GCASH_QR_RESOURCE, ICON_RESOURCE
+
+
+def bundled_data(resource: Path | str) -> tuple[str, str]:
+    relative_path = Path(resource)
+    if relative_path.is_absolute():
+        raise ValueError(f"Bundled resource must be a relative path: {resource}")
+    source_path = project_root / relative_path
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Bundled resource does not exist: {source_path}")
+    return str(source_path), relative_path.parent.as_posix()
 
 block_cipher = None
 
 a = Analysis(
-    ["main.py"],
-    pathex=["."],
+    [str(project_root / "main.py")],
+    pathex=[str(project_root)],
     binaries=[],
     datas=[
-        ("app_icon.ico", "."),
-        ("frame_sample.png", "."),
+        bundled_data(ICON_RESOURCE),
+        bundled_data(DEFAULT_FRAME_RESOURCE),
+        bundled_data(GCASH_QR_RESOURCE),
     ],
     hiddenimports=[],
     hookspath=[],

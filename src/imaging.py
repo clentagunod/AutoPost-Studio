@@ -105,3 +105,18 @@ def process_one(
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         LOG.error("Skipped %s: %s", photo_path.name, exc)
         return False
+
+
+def process_without_frame(
+    photo_path: Path,
+    out_path: Path,
+    quality: int,
+) -> bool:
+    """Load, orient, and save one photo without applying a frame."""
+    try:
+        save_image(load_photo(photo_path), out_path, quality)
+        LOG.info("Saved %s without a frame", out_path)
+        return True
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        LOG.error("Skipped %s: %s", photo_path.name, exc)
+        return False

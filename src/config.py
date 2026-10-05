@@ -8,10 +8,11 @@ from collections.abc import Mapping
 from pathlib import Path
 
 APP_NAME = "AutoPost Studio"
-APP_VERSION = "1.1.5"
+APP_VERSION = "2.1.1"
 LOGGER_NAME = "frame_studio"
 ICON_RESOURCE = "app_icon.ico"
 DEFAULT_FRAME_RESOURCE = Path("frame_sample.png")
+GCASH_QR_RESOURCE = Path("qr_code.jpg")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 IS_FROZEN = bool(vars(sys).get("frozen", False))
@@ -64,6 +65,7 @@ def _resolve_icon_path(app_dir: Path, resource_root: Path, frozen: bool) -> Path
 
 ICON_PATH = _resolve_icon_path(APP_INSTALL_DIR, RESOURCE_ROOT, IS_FROZEN)
 DEFAULT_FRAME_PATH = RESOURCE_ROOT / DEFAULT_FRAME_RESOURCE
+GCASH_QR_PATH = RESOURCE_ROOT / GCASH_QR_RESOURCE
 
 
 def resource_path(*parts: str) -> Path:

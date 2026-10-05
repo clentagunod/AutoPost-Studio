@@ -1,6 +1,6 @@
 {
-  "frame_path": "C:/Users/Clent/Documents/Programming/Python/AutoPost Studio/frame_sample.png",
-  "photo_path": "C:/Users/Clent/Pictures/Screenshots/Screenshot (82).png",
+  "frame_path": "",
+  "photo_path": "",
   "output_path": "",
   "fit": "contain",
   "quality": 93,
@@ -8,7 +8,7 @@
   "posting_target": "facebook_page",
   "output_dir": "C:\\Users\\Clent\\Documents\\Programming\\Python\\School Publisher\\outputs",
   "output_format": "png",
-  "caption": "Celebrating Mathematics Day!\n\n#MathematicsDay #MathLove #STEM\n\n#MathematicsDay",
+  "caption": "",
   "facebook_page_id": "1386715137852281",
   "caption_provider": "groq",
   "caption_endpoint": "https://api.groq.com/openai/v1",
@@ -33,5 +33,6 @@
       "page_id": "1386715137852281"
     }
   ],
-  "active_facebook_page_id": "1386715137852281"
+  "active_facebook_page_id": "1386715137852281",
+  "use_frame": false
 }

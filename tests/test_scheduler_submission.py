@@ -11,10 +11,16 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QDateTime, QItemSelectionModel, Qt
-from PySide6.QtWidgets import QApplication, QDateTimeEdit, QMessageBox
+from PySide6.QtCore import QDate, QDateTime, QItemSelectionModel, QRect, Qt
+from PySide6.QtGui import QImage, QPainter, QPalette
+from PySide6.QtWidgets import (
+    QApplication,
+    QCalendarWidget,
+    QDateTimeEdit,
+    QMessageBox,
+)
 
-from src.app import SchedulerDialog
+from src.app import CalendarDateTimeEdit, MonthOnlyCalendar, SchedulerDialog
 from src.scheduler import PostRecord, load_posts, save_post
 
 
@@ -110,6 +116,89 @@ class SchedulerSubmissionTests(unittest.TestCase):
                 schedule.strftime("%Y-%m-%d %H:%M"),
             )
             dialog.close()
+
+    def test_schedule_date_controls_fit_inside_visible_table_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dialog = self._create_dialog(Path(temporary), 2)
+
+            for row in range(dialog.table.rowCount()):
+                schedule = dialog.table.cellWidget(row, 2)
+                self.assertIsInstance(schedule, QDateTimeEdit)
+                self.assertGreaterEqual(
+                    dialog.table.rowHeight(row),
+                    schedule.minimumSizeHint().height(),
+                )
+
+            dialog.close()
+
+    def test_unscheduled_calendar_opens_on_today_without_week_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dialog = self._create_dialog(Path(temporary), 1)
+            schedule = dialog.table.cellWidget(0, 2)
+            self.assertIsInstance(schedule, QDateTimeEdit)
+            calendar = schedule.calendar
+            self.assertIsInstance(calendar, QCalendarWidget)
+
+            today = QDate.currentDate()
+            self.assertEqual(schedule.minimumDate(), today)
+            self.assertEqual(schedule.dateTime(), schedule.minimumDateTime())
+            self.assertEqual(calendar.yearShown(), today.year())
+            self.assertEqual(calendar.monthShown(), today.month())
+            self.assertEqual(
+                calendar.verticalHeaderFormat(),
+                QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader,
+            )
+            self.assertEqual(
+                calendar.horizontalHeaderFormat(),
+                QCalendarWidget.HorizontalHeaderFormat.ShortDayNames,
+            )
+            self.assertTrue(calendar.isGridVisible())
+            dialog.close()
+
+    def test_calendar_button_toggles_calendar_and_selects_date(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dialog = self._create_dialog(Path(temporary), 1)
+            schedule = dialog.table.cellWidget(0, 2)
+            self.assertIsInstance(schedule, CalendarDateTimeEdit)
+            self.assertFalse(schedule.calendar_button.icon().isNull())
+            calendar = schedule.calendar
+            self.assertIsNotNone(calendar)
+
+            schedule.calendar_button.click()
+            self.application.processEvents()
+            self.assertTrue(calendar.isVisible())
+            self.assertGreaterEqual(calendar.height(), 260)
+
+            selected_date = QDate.currentDate().addDays(1)
+            calendar.clicked.emit(selected_date)
+            self.assertEqual(schedule.dateTime().date(), selected_date)
+            self.assertFalse(calendar.isVisible())
+
+            schedule.calendar_button.click()
+            self.application.processEvents()
+            self.assertTrue(calendar.isVisible())
+            schedule.calendar_button.click()
+            self.application.processEvents()
+            self.assertFalse(calendar.isVisible())
+            dialog.close()
+
+    def test_calendar_hides_days_outside_the_displayed_month(self) -> None:
+        calendar = MonthOnlyCalendar()
+        calendar.setCurrentPage(2028, 12)
+        outside_date = QDate(2028, 12, 1).addDays(-1)
+        image = QImage(40, 30, QImage.Format.Format_ARGB32)
+        image.fill("#ff00ff")
+        painter = QPainter(image)
+
+        calendar.paintCell(painter, QRect(0, 0, 40, 30), outside_date)
+
+        painter.end()
+        self.assertEqual(
+            image.pixelColor(5, 5),
+            calendar.palette().color(QPalette.ColorRole.Base),
+        )
+        self.assertEqual(calendar.monthShown(), 12)
+        self.assertEqual(calendar.yearShown(), 2028)
 
     def test_meta_acceptance_is_saved_as_scheduled_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

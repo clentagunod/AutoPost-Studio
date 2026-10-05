@@ -10,6 +10,7 @@ env/
 build/
 dist/
 *.egg-info/
+.conda/
 
 # Editor and version-control metadata
 .vscode/
@@ -25,7 +26,10 @@ htmlcov/
 # Runtime output
 logs/
 outputs/
+data/google_drive_imports/
 *.log
 
 # Local test script
 test.py
+gcash_qr_placeholder.svg
+qr_code.jpg

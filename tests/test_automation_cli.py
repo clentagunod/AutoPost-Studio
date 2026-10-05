@@ -5,16 +5,68 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 from src.automation_cli import main
 from src.cli import main as image_cli_main
+from src.facebook_cli import main as facebook_cli_main
 
 
 class AutomationCliTests(unittest.TestCase):
+    def test_publish_command_defaults_to_active_console_page(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            image = folder / "post.png"
+            image.touch()
+            stdout = io.StringIO()
+            with (
+                patch.dict(os.environ, {"FB_PAGE_ID": "", "FB_PAGE_TOKEN": ""}),
+                contextlib.redirect_stdout(stdout),
+            ):
+                result = main(
+                    ["publish", "post.png", "--dry-run"],
+                    cwd=folder,
+                    default_page_id="page-current",
+                )
+
+            self.assertEqual(result, 0)
+            self.assertIn(f"image={image}", stdout.getvalue())
+            self.assertIn("page=page-current", stdout.getvalue())
+
+    def test_publish_uses_the_saved_token_for_the_selected_page(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            image = folder / "post.png"
+            image.touch()
+            with (
+                patch.dict(
+                    os.environ,
+                    {"FB_PAGE_ID": "page-a", "FB_PAGE_TOKEN": ""},
+                ),
+                patch("src.vault.get_secret", return_value="page-a-token") as get_secret,
+                patch(
+                    "src.facebook_cli.post_photo",
+                    return_value={"id": "remote-post"},
+                ) as post_photo,
+            ):
+                result = facebook_cli_main(
+                    ["post.png", "Caption"],
+                    base_dir=folder,
+                )
+
+            self.assertEqual(result, 0)
+            get_secret.assert_called_once_with("facebook_page_token_page-a")
+            self.assertEqual(
+                post_photo.call_args.args[:4],
+                ("page-a", "page-a-token", str(image), "Caption"),
+            )
+
     def test_status_command_succeeds_with_empty_output_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             output_dir = Path(temporary) / "outputs"
@@ -76,6 +128,30 @@ class AutomationCliTests(unittest.TestCase):
                 process_one.call_args.args[2],
                 output_dir / "portrait_framed.png",
             )
+
+    def test_frame_command_resolves_relative_paths_from_console_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            Image.new("RGBA", (8, 8), (0, 0, 0, 0)).save(folder / "frame.png")
+            Image.new("RGBA", (8, 8), (40, 80, 120, 255)).save(
+                folder / "photo.png"
+            )
+            output = folder / "exports" / "finished.png"
+            with patch("src.cli.process_one", return_value=True) as process_one:
+                result = main(
+                    [
+                        "frame",
+                        "frame.png",
+                        "photo.png",
+                        "--output",
+                        "exports/finished.png",
+                    ],
+                    cwd=folder,
+                )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(process_one.call_args.args[1], folder / "photo.png")
+            self.assertEqual(process_one.call_args.args[2], output)
 
     def test_queue_list_can_emit_json_for_scripts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

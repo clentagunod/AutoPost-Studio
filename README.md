@@ -2,7 +2,7 @@
 
 AutoPost Studio is a Windows-friendly desktop application for compositing photos with transparent PNG frames, organizing post drafts, and publishing or scheduling photo posts to Facebook Pages. Its interface is built with PySide6 and image operations use Pillow.
 
-> **Posting scope:** Meta's Graph API supports publishing to Facebook Pages the signed-in user is permitted to manage. It does not support posting to a personal Facebook profile from this application. Google Drive import and automatic update checks are not implemented yet.
+> **Posting scope:** Meta's Graph API supports publishing to Facebook Pages the signed-in user is permitted to manage. It does not support posting to a personal Facebook profile from this application. Automatic update checks are not implemented yet.
 
 ## Quick start
 
@@ -13,13 +13,13 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-In the app, select a transparent frame PNG, select a source image, write a caption if desired, and choose **Export image**. To process a batch, choose **File → Load multiple images** and select one or more files, or use **File → Load image folder** to select every supported image in a directory. Batch mode disables the single-image field, shows up to eight framed previews with a remaining-image count, and changes the export action to export the selection. Supported formats include JPG/JPEG, PNG, WebP, BMP, TIFF, and TIF.
+In the app, select a transparent frame PNG, select a source image, write a caption if desired, and choose **Export image**. Choose **Inspect full size** or double-click the live preview to inspect a single photo's full-size composition. To process a batch, choose **File → Load multiple images**, **File → Load image folder**, or **File → Import photos from Google Drive**. Batch mode disables the single-image field, shows a scrollable preview for every selected photo, and changes the export action to export the selection. Select a photo and double-click it or choose **Zoom selected** to inspect its full-size composition; use **Ctrl+scroll** or a touchpad pinch gesture to zoom naturally, and scroll normally to pan. Turn off **Use frame overlay** in the creator workspace to export photos without applying a frame. Supported formats include JPG/JPEG, PNG, WebP, BMP, TIFF, and TIF.
 
 ## Features
 
-- **File:** load a frame or photo, select multiple images or a folder of photos for batch processing, open the post scheduler, edit caption assistant settings, reset the preview. Google Drive is explicitly reserved for a future release.
-- **View:** light/dark appearance and a single-prompt terminal-style app console. It accepts the same application automation commands as the standalone CLI; it is not a general-purpose operating-system shell.
-- **Options:** multiple Facebook Page names, IDs, and access tokens; AI caption provider settings; and the scheduler folder. Choose the active Page from the current-Page selector above the workspace. Each Page token is saved in the operating system credential vault, and scheduler posts use the token saved for their Page ID.
+- **File:** load a frame or photo, select multiple images or a folder of photos for batch processing, browse Google Drive folders and import selected photos, open the post scheduler, edit caption assistant settings, reset the preview.
+- **View:** light/dark appearance and an embedded Windows PowerShell console with a persistent working directory and AutoPost automation commands.
+- **Options:** Google Drive OAuth setup, multiple Facebook Page names, IDs, and access tokens, AI caption provider settings, and the scheduler folder. Choose the active Page from the current-Page selector above the workspace. Drive and Facebook authorizations are stored in the operating system credential vault.
 - **About:** application version and developer/about information.
 - **Post metadata:** each image exported by the desktop app receives a `.autopost` JSON sidecar containing its image path, caption, schedule, destination, Page ID, status, and remote post ID. By default the sidecar is in the output folder beside its image; if a separate scheduler folder is configured, new sidecars are saved there and refer to the image by absolute path. The scheduler also lists supported image files without a sidecar as editable draft posts. Sidecars are ordinary JSON and can be backed up or inspected with a text editor.
 - **Meta scheduling:** **Schedule with Facebook** submits a scheduled-publishing request to Meta immediately. After Meta accepts it, Meta publishes the post even when AutoPost Studio is closed or the computer is off. The app does not run a detached scheduler or retry a submission that Meta did not accept.
@@ -27,7 +27,19 @@ In the app, select a transparent frame PNG, select a source image, write a capti
 - **Scheduler deletion:** select one or multiple rows and choose **Delete selected**. After confirmation, the matching sidecar files and image files are deleted. Images shared by another remaining scheduler record are preserved.
 - **Facebook publishing:** select one or more rows in the scheduler (Ctrl/Shift-click), then choose **Individual posts** to publish each image as a separate post or **One album post** to combine 2–10 images into one post. Individual posts use each row's caption. An album uses the first selected row's caption and requires the same Page ID. For an album schedule, set the shared date/time once and choose **Schedule with Facebook**.
 - **Facebook image fit:** the live preview shows the composed image at its actual aspect ratio. Facebook uploads are optimized as JPEG without adding a canvas, side fill, or crop, so the uploaded file contains the image itself only. Facebook's own surrounding Page/feed layout may still show its display background depending on screen width; the app does not bake any extra white, brown, or blurred bars into the photo.
-- **Automation CLI:** frame image folders recursively, inspect saved post metadata, and publish/schedule posts through Facebook Page APIs.
+- **In-app automation console:** frame image folders recursively, inspect saved post metadata, run Windows shell commands, and publish/schedule posts through Facebook Page APIs.
+
+## Google Drive photo import
+
+Drive import uses Google's read-only Drive API scope. Set it up once:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or select a project and enable the **Google Drive API**.
+2. Configure the OAuth consent screen and add your Google account as a test user if the app remains in testing.
+3. Create an OAuth client ID with application type **Desktop app**, then download its JSON file.
+4. In AutoPost Studio, choose **Options → Google Drive…**, select that JSON file, and save.
+5. Choose **File → Import photos from Google Drive…**. On first use, the app opens a browser for Google sign-in and read-only consent. Then browse folders, check supported image files, and choose **Import selected**.
+
+The OAuth refresh token is stored in the operating system credential vault. Imported copies are kept under the app's data directory in `data/google_drive_imports` so the existing preview/export workflow can use them offline. **Options → Google Drive → Disconnect Google Drive** removes the saved authorization; it does not delete imported photos. Only image files with supported extensions are shown.
 
 ## Data and output folders
 
@@ -52,6 +64,8 @@ Rendered images use the selected output folder; the default is `outputs`. The sc
 ## Application configuration and icon
 
 Application identity and runtime locations are centralized in [`src/config.py`](./src/config.py). To change the product name/version or point to another icon, update `APP_NAME`, `APP_VERSION`, or `ICON_RESOURCE` there. The application icon file `app_icon.ico` is in the project root beside `main.py`; the optional default frame asset is `frame_sample.png`. Add other bundled read-only resources and resolve them with `resource_path(...)`. User data, logs, and output directories are kept separate from bundled resources so packaged apps can read their assets without writing into the bundle.
+
+The **About → Developer information** dialog includes an optional **Buy me a coffee** section. Donations are accepted in any amount through GCash only. Replace `gcash_qr_placeholder.svg` with your GCash QR image, keeping the same filename, and rebuild; you do not need to move or separately ship the image. If you use another filename or place it in a subfolder, set the relative path in `GCASH_QR_RESOURCE` in `src/config.py` first. `AutoPost_Studio.spec` bundles that configured image at the matching internal path and reports a clear build error if it is missing. The checked-in SVG is explicitly marked as a non-scannable placeholder.
 
 ## Facebook Page API setup
 
@@ -124,72 +138,37 @@ Choose **Generate caption**; an image is not required. Review and edit the gener
 
 The app reports connection, response, and configuration errors and does not silently replace a failed result with generated-looking text. Install the `groq` package with `python -m pip install -r requirements.txt` when upgrading an existing source checkout.
 
-## Automation CLI
+## In-app automation console
 
-The standalone automation entry point supports scripting and can also be used in the in-app terminal. It does not execute arbitrary PowerShell, Command Prompt, or shell commands.
-
-```powershell
-# Show workspace and scheduler counts (use --json for scripts)
-python main.py cli status --json
-
-# Frame one photo
-python main.py cli frame .\frame.png .\portrait.jpg --output .\outputs\portrait.png
-
-# Frame a folder, including nested folders while preserving their relative paths
-python main.py cli frame .\frame.png .\incoming --output .\outputs --recursive --fit contain
-
-# List saved post metadata, filter by status, and emit JSON for automation
-python main.py cli queue list --status scheduled --json
-
-# Delete local metadata requires explicit confirmation (does not cancel Meta schedules)
-python main.py cli queue delete POST_ID --yes
-
-# Publish immediately, or submit directly to Meta's schedule with --schedule
-$env:FB_PAGE_ID = "YOUR_PAGE_ID"
-$env:FB_PAGE_TOKEN = "YOUR_PAGE_ACCESS_TOKEN"
-python main.py cli publish .\outputs\portrait.png "A new post" --dry-run
-python main.py cli publish .\outputs\portrait.png "A new post"
-python main.py cli publish .\outputs\portrait.png "A new post" --schedule "2026-10-05 18:30"
-```
-
-`queue list` and `queue delete` operate on local `.autopost` metadata. Local queue submission has been removed; use the scheduler GUI or `publish --schedule` to submit an actual schedule to Meta. `queue delete` deliberately requires `--yes` because it removes local files; a shared image is preserved if another record references it. Deleting a local record does not cancel an accepted Meta schedule.
-
-Run `python main.py cli --help`, `python main.py cli queue --help`, or `python main.py cli frame --help` to see options. The in-app terminal supports command history with the Up/Down keys. Paths containing spaces should be quoted.
-
-## Image CLI details
-
-The image CLI is also useful for repeatable local automation:
+Open **View → CLI Console…** to run commands inside AutoPost Studio, including in the packaged executable. The console starts in the directory from which the app was launched. Use `cd` to move into a project or image folder; this working directory persists between commands and relative paths in AutoPost commands resolve from it. Paths containing spaces should be quoted.
 
 ```powershell
-# One image; output defaults to outputs\portrait_framed.png
-python main.py cli frame .\frame.png .\portrait.jpg
-
-# A directory; outputs files to outputs by default
-python main.py cli frame .\frame.png .\incoming-photos
-
-# Keep the whole image in view instead of cropping to fill
-python main.py cli frame .\frame.png .\portrait.jpg --fit contain
-
-# Tune JPEG output quality and crop anchor (0 to 1)
-python main.py cli frame .\frame.png .\portrait.jpg --quality 92 --anchor 0.5 0.35
-
-# See all arguments
-python main.py cli frame --help
+cd "C:\Users\you\Pictures\Campaign"
+pwd
+Get-ChildItem
+frame .\frame.png .\incoming --output .\exports --recursive --fit contain
+status --json
+queue list --status scheduled
+cls
+help
+exit
 ```
 
-CLI options include `--output`, `--fit cover|contain`, `--anchor X Y`, `--quality 1..100`, `--recursive`, and `--verbose`. By default, CLI-framed images are saved to the app's `outputs` folder (under the current user's application data directory when packaged); use `--output` to select another destination. The frame should be a transparent PNG. Folder mode processes supported images directly within the folder by default; `--recursive` includes nested folders and preserves their relative output paths. It reports skipped images and returns a non-zero status if processing is incomplete.
+The console runs Windows PowerShell commands in the current directory. Shell commands run asynchronously; use **Stop command** or **Ctrl+C** to interrupt a running process. `cd`, `pwd`, `cls`, `help`, and `exit` are handled by the embedded console. AutoPost commands include `frame`, `publish`, `status`, and `queue`; run a command with `--help` for its options. For example, `frame --help` lists image-processing options such as `--output`, `--fit`, `--anchor`, `--quality`, and `--recursive`. By default, framed images go into the app's `outputs` folder; specify `--output .\exports` to save relative to the current directory.
+
+PowerShell commands run with the current Windows user's permissions. Avoid pasting commands you do not trust. The standalone `main.py cli` entry point has been removed; use this in-app console for interactive shell and AutoPost automation.
 
 ## Build a Windows executable
 
-From a clean Python environment in the project directory:
+From a clean Python environment in the project directory, build with the project spec:
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
-pyinstaller --noconfirm --windowed --name "AutoPost Studio" --icon "app_icon.ico" --add-data "app_icon.ico;." --add-data "frame_sample.png;." main.py
+pyinstaller --noconfirm AutoPost_Studio.spec
 ```
 
-For a repeatable build recipe, a matching spec file is also included at `AutoPost_Studio.spec`. It bundles the application icon and default sample frame without needing to retype the `--add-data` arguments manually. The executable is written below `dist\AutoPost Studio\`. The root-level `app_icon.ico` sets the Windows executable icon and is loaded for the Qt application/window from the bundle. For a packaged app, the Qt window also checks for `app_icon.ico` beside the executable first, so a replacement icon can be used there without rebuilding. Install under `Program Files` as usual; logs, preferences, and default outputs are stored per-user under `%LOCALAPPDATA%\AutoPost Studio`. Remove `--add-data "frame_sample.png;."` if you do not want the default frame.
+The spec bundles the application icon, default sample frame, and the configured QR image. PyInstaller places bundled resources in its internal application resource directory; the app resolves the QR through PyInstaller's runtime resource root, so the QR is not loaded from the current working directory and cannot conflict with a separately copied file. Distribute the complete `dist\AutoPost Studio\` folder produced by this spec; the QR is already inside the package and does not need to sit beside the executable. Logs, preferences, and default outputs are stored per-user under `%LOCALAPPDATA%\AutoPost Studio`.
 
 ## Development and validation
 

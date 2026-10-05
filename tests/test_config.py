@@ -12,6 +12,8 @@ from src.config import (
     APP_VERSION,
     DATA_DIR,
     DEFAULT_FRAME_PATH,
+    GCASH_QR_PATH,
+    GCASH_QR_RESOURCE,
     ICON_PATH,
     LOG_DIR,
     OUTPUT_DIR,
@@ -53,8 +55,10 @@ class ApplicationConfigTests(unittest.TestCase):
     def test_asset_paths_resolve_from_resource_root(self) -> None:
         self.assertEqual(ICON_PATH, resource_path("app_icon.ico"))
         self.assertEqual(DEFAULT_FRAME_PATH, resource_path("frame_sample.png"))
+        self.assertEqual(GCASH_QR_PATH, resource_path(str(GCASH_QR_RESOURCE)))
         self.assertTrue(ICON_PATH.is_file())
         self.assertTrue(DEFAULT_FRAME_PATH.is_file())
+        self.assertTrue(GCASH_QR_PATH.is_file())
         self.assertEqual(ICON_PATH.parent, RESOURCE_ROOT)
 
     def test_packaged_icon_prefers_file_beside_executable(self) -> None:

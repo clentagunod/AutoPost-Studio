@@ -166,15 +166,24 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return _build_parser().parse_args(list(argv))
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run automation commands; `frame` and `publish` reuse the existing CLIs."""
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    cwd: Path | None = None,
+    default_page_id: str = "",
+) -> int:
+    """Run AutoPost automation commands, resolving command paths from cwd."""
     args_list = list(sys.argv[1:] if argv is None else argv)
     if args_list and args_list[0] == "frame":
         from .cli import main as image_cli_main
 
-        return image_cli_main(args_list[1:])
+        return image_cli_main(args_list[1:], base_dir=cwd)
     if args_list and args_list[0] == "publish":
-        return facebook_cli_main(args_list[1:])
+        return facebook_cli_main(
+            args_list[1:],
+            base_dir=cwd,
+            default_page_id=default_page_id,
+        )
 
     args = _parse_args(args_list)
     if args.command == "status":
@@ -185,7 +194,3 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.queue_command == "delete":
             return _queue_delete(args.post_id)
     return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
